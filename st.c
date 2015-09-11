@@ -17,6 +17,7 @@
 #include <sys/time.h>
 #include <sys/types.h>
 #include <sys/wait.h>
+#include <termios.h>
 #include <time.h>
 #include <unistd.h>
 #include <libgen.h>
@@ -347,6 +348,7 @@ static void xzoomreset(const Arg *);
 static void printsel(const Arg *);
 static void printscreen(const Arg *) ;
 static void toggleprinter(const Arg *);
+static void sendbreak(const Arg *);
 
 /* Config.h for applying patches and the configuration. */
 #include "config.h"
@@ -1025,7 +1027,10 @@ getsel(void)
 
 	/* append every set & selected glyph to the selection */
 	for (y = sel.nb.y; y <= sel.ne.y; y++) {
-		linelen = tlinelen(y);
+		if ((linelen = tlinelen(y)) == 0) {
+			*ptr++ = '\n';
+			continue;
+		}
 
 		if (sel.type == SEL_RECTANGULAR) {
 			gp = &TLINE(y)[sel.nb.x];
@@ -1559,7 +1564,8 @@ ttywrite(const char *s, size_t n)
 				 * This means the buffer is getting full
 				 * again. Empty it.
 				 */
-				ttyread();
+				if (n < 256)
+					ttyread();
 				n -= r;
 				s += r;
 			} else {
@@ -2653,6 +2659,13 @@ strreset(void)
 }
 
 void
+sendbreak(const Arg *arg)
+{
+	if (tcsendbreak(cmdfd, 0))
+		perror("Error sending break");
+}
+
+void
 tprinter(char *s, size_t len)
 {
 	if (iofd != -1 && xwrite(iofd, s, len) < 0) {
@@ -2848,18 +2861,37 @@ tcontrolcode(uchar ascii)
 	case '\023': /* XOFF (IGNORED) */
 	case 0177:   /* DEL (IGNORED) */
 		return;
+	case 0x80:   /* TODO: PAD */
+	case 0x81:   /* TODO: HOP */
+	case 0x82:   /* TODO: BPH */
+	case 0x83:   /* TODO: NBH */
 	case 0x84:   /* TODO: IND */
 		break;
 	case 0x85:   /* NEL -- Next line */
 		tnewline(1); /* always go to first col */
 		break;
+	case 0x86:   /* TODO: SSA */
+	case 0x87:   /* TODO: ESA */
+		break;
 	case 0x88:   /* HTS -- Horizontal tab stop */
 		term.tabs[term.c.x] = 1;
 		break;
+	case 0x89:   /* TODO: HTJ */
+	case 0x8a:   /* TODO: VTS */
+	case 0x8b:   /* TODO: PLD */
+	case 0x8c:   /* TODO: PLU */
 	case 0x8d:   /* TODO: RI */
 	case 0x8e:   /* TODO: SS2 */
 	case 0x8f:   /* TODO: SS3 */
+	case 0x91:   /* TODO: PU1 */
+	case 0x92:   /* TODO: PU2 */
+	case 0x93:   /* TODO: STS */
+	case 0x94:   /* TODO: CCH */
+	case 0x95:   /* TODO: MW */
+	case 0x96:   /* TODO: SPA */
+	case 0x97:   /* TODO: EPA */
 	case 0x98:   /* TODO: SOS */
+	case 0x99:   /* TODO: SGCI */
 		break;
 	case 0x9a:   /* DECID -- Identify Terminal */
 		ttywrite(vtiden, sizeof(vtiden) - 1);
@@ -2868,9 +2900,9 @@ tcontrolcode(uchar ascii)
 	case 0x9c:   /* TODO: ST */
 		break;
 	case 0x90:   /* DCS -- Device Control String */
-	case 0x9f:   /* APC -- Application Program Command */
-	case 0x9e:   /* PM -- Privacy Message */
 	case 0x9d:   /* OSC -- Operating System Command */
+	case 0x9e:   /* PM -- Privacy Message */
+	case 0x9f:   /* APC -- Application Program Command */
 		tstrsequence(ascii);
 		return;
 	}
@@ -4359,7 +4391,7 @@ usage(void)
 	"          [-i] [-t title] [-T title] [-w windowid] [-e command ...]"
 	" [command ...]\n"
 	"       st [-a] [-v] [-c class] [-f font] [-g geometry] [-o file]\n"
-	"          [-i] [-t title] [-T title] [-w windowid] [-l line]"
+	"          [-i] [-t title] [-T title] [-w windowid] -l line"
 	" [stty_args ...]\n",
 	argv0);
 }
@@ -4371,7 +4403,7 @@ main(int argc, char *argv[])
 
 	xw.l = xw.t = 0;
 	xw.isfixed = False;
-	xw.cursor = 0;
+	xw.cursor = cursorshape;
 
 	ARGBEGIN {
 	case 'a':
