@@ -2564,7 +2564,7 @@ strhandle(void)
 		case 1:
 		case 2:
 			if (narg > 1)
-				xsettitle(strescseq.args[1]);
+				xsettitle("st");
 			return;
 		case 4: /* color set */
 			if (narg < 3)
@@ -2586,7 +2586,7 @@ strhandle(void)
 		}
 		break;
 	case 'k': /* old title set compatibility */
-		xsettitle(strescseq.args[0]);
+		xsettitle("st");
 		return;
 	case 'P': /* DCS -- Device Control String */
 	case '_': /* APC -- Application Program Command */
@@ -3968,7 +3968,7 @@ xsettitle(char *p)
 void
 xresettitle(void)
 {
-	xsettitle(opt_title ? opt_title : "st");
+	xsettitle("st");
 }
 
 void
