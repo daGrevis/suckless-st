@@ -108,10 +108,14 @@ static const char *colorname[] = {
 	[257] = "#2d2d2d", /* default bg: Base 00 */	
 };
 
-// Foreground, background and cursor
+/*
+ * Default colors (colorname index)
+ * foreground, background, cursor, reverse cursor
+ */
 static unsigned int defaultfg = 256;
 static unsigned int defaultbg = 257;
 static unsigned int defaultcs = 256;
+static unsigned int defaultrcs = 257;
 
 /*
  * Default shape of cursor
@@ -153,15 +157,15 @@ static MouseShortcut mshortcuts[] = {
 };
 
 /* Internal keyboard shortcuts. */
-#define MODKEY Mod1Mask
+#define MODKEY Mod1Mask // "Alt" key in most cases.
 
+// See file "/usr/include/X11/keysymdef.h" for key names.
 static Shortcut shortcuts[] = {
 	/* mask                 keysym          function        argument */
+	{ XK_ANY_MOD,           XK_Break,       sendbreak,      {.i =  0} },
 	{ ControlMask,          XK_Print,       toggleprinter,  {.i =  0} },
 	{ ShiftMask,            XK_Print,       printscreen,    {.i =  0} },
 	{ XK_ANY_MOD,           XK_Print,       printsel,       {.i =  0} },
-	{ MODKEY|ShiftMask,     XK_Prior,       xzoom,          {.f = +1} },
-	{ MODKEY|ShiftMask,     XK_Next,        xzoom,          {.f = -1} },
 	{ MODKEY|ShiftMask,     XK_Home,        xzoomreset,     {.f =  0} },
 	{ ShiftMask,            XK_Insert,      selpaste,       {.i =  0} },
 	{ MODKEY|ShiftMask,     XK_Insert,      clippaste,      {.i =  0} },
@@ -170,6 +174,10 @@ static Shortcut shortcuts[] = {
 	{ MODKEY,               XK_Num_Lock,    numlock,        {.i =  0} },
 	{ ShiftMask,            XK_Page_Up,     kscrollup,      {.i = -1} },
 	{ ShiftMask,            XK_Page_Down,   kscrolldown,    {.i = -1} },
+
+	// Change font-size.
+	{ ControlMask,          XK_equal,       xzoom,          {.f = +1} },
+	{ ControlMask,          XK_minus,       xzoom,          {.f = -1} },
 };
 
 /*
