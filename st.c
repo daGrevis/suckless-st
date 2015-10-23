@@ -709,9 +709,10 @@ utf8validate(Rune *u, size_t i)
 void
 selinit(void)
 {
-	memset(&sel.tclick1, 0, sizeof(sel.tclick1));
-	memset(&sel.tclick2, 0, sizeof(sel.tclick2));
+	clock_gettime(CLOCK_MONOTONIC, &sel.tclick1);
+	clock_gettime(CLOCK_MONOTONIC, &sel.tclick2);
 	sel.mode = SEL_IDLE;
+	sel.snap = 0;
 	sel.ob.x = -1;
 	sel.primary = NULL;
 	sel.clipboard = NULL;
@@ -1158,10 +1159,10 @@ selnotify(XEvent *e)
 			*repl++ = '\r';
 		}
 
-		if (IS_SET(MODE_BRCKTPASTE))
+		if (IS_SET(MODE_BRCKTPASTE) && ofs == 0)
 			ttywrite("\033[200~", 6);
 		ttysend((char *)data, nitems * format / 8);
-		if (IS_SET(MODE_BRCKTPASTE))
+		if (IS_SET(MODE_BRCKTPASTE) && rem == 0)
 			ttywrite("\033[201~", 6);
 		XFree(data);
 		/* number of 32-bit chunks returned */
@@ -1453,8 +1454,7 @@ ttynew(void)
 	if (opt_line) {
 		if ((cmdfd = open(opt_line, O_RDWR)) < 0)
 			die("open line failed: %s\n", strerror(errno));
-		close(0);
-		dup(cmdfd);
+		dup2(cmdfd, 0);
 		stty();
 		return;
 	}
@@ -2509,15 +2509,15 @@ csihandle(void)
 		break;
 	case ' ':
 		switch (csiescseq.mode[1]) {
-			case 'q': /* DECSCUSR -- Set Cursor Style */
-				DEFAULT(csiescseq.arg[0], 1);
-				if (!BETWEEN(csiescseq.arg[0], 0, 6)) {
-					goto unknown;
-				}
-				xw.cursor = csiescseq.arg[0];
-				break;
-			default:
+		case 'q': /* DECSCUSR -- Set Cursor Style */
+			DEFAULT(csiescseq.arg[0], 1);
+			if (!BETWEEN(csiescseq.arg[0], 0, 6)) {
 				goto unknown;
+			}
+			xw.cursor = csiescseq.arg[0];
+			break;
+		default:
+			goto unknown;
 		}
 		break;
 	}
@@ -3903,6 +3903,7 @@ xdrawglyph(Glyph g, int x, int y)
 {
 	int numspecs;
 	XftGlyphFontSpec spec;
+
 	numspecs = xmakeglyphfontspecs(&spec, &g, 1, x, y);
 	xdrawglyphfontspecs(&spec, g, numspecs, x, y);
 }
@@ -3912,7 +3913,9 @@ xdrawcursor(void)
 {
 	static int oldx = 0, oldy = 0;
 	int curx;
-	Glyph g = {' ', ATTR_NULL, defaultbg, defaultcs};
+	Glyph g = {' ', ATTR_NULL, defaultbg, defaultcs}, og;
+	int ena_sel = sel.ob.x != -1 && sel.alt == IS_SET(MODE_ALTSCREEN);
+	Color drawcol;
 
 	LIMIT(oldx, 0, term.col-1);
 	LIMIT(oldy, 0, term.row-1);
@@ -3925,10 +3928,36 @@ xdrawcursor(void)
 	if (term.line[term.c.y][curx].mode & ATTR_WDUMMY)
 		curx--;
 
+	/* remove the old cursor */
+	og = term.line[oldy][oldx];
+	if (ena_sel && selected(oldx, oldy))
+		og.mode ^= ATTR_REVERSE;
+	xdrawglyph(og, oldx, oldy);
+
 	g.u = term.line[term.c.y][term.c.x].u;
 
-	/* remove the old cursor */
-	xdrawglyph(term.line[oldy][oldx], oldx, oldy);
+	/*
+	 * Select the right color for the right mode.
+	 */
+	if (IS_SET(MODE_REVERSE)) {
+		g.mode |= ATTR_REVERSE;
+		g.bg = defaultfg;
+		if (ena_sel && selected(term.c.x, term.c.y)) {
+			drawcol = dc.col[defaultcs];
+			g.fg = defaultrcs;
+		} else {
+			drawcol = dc.col[defaultrcs];
+			g.fg = defaultcs;
+		}
+	} else {
+		if (ena_sel && selected(term.c.x, term.c.y)) {
+			drawcol = dc.col[defaultrcs];
+			g.fg = defaultfg;
+			g.bg = defaultrcs;
+		} else {
+			drawcol = dc.col[defaultcs];
+		}
+	}
 
 	if (IS_SET(MODE_HIDE))
 		return;
@@ -3936,47 +3965,44 @@ xdrawcursor(void)
 	/* draw the new one */
 	if (xw.state & WIN_FOCUSED) {
 		switch (xw.cursor) {
-			case 0: /* Blinking Block */
-			case 1: /* Blinking Block (Default) */
-			case 2: /* Steady Block */
-				if (IS_SET(MODE_REVERSE)) {
-						g.mode |= ATTR_REVERSE;
-						g.fg = defaultcs;
-						g.bg = defaultfg;
-					}
-
-				g.mode |= term.line[term.c.y][curx].mode & ATTR_WIDE;
-				xdrawglyph(g, term.c.x, term.c.y);
-				break;
-			case 3: /* Blinking Underline */
-			case 4: /* Steady Underline */
-				XftDrawRect(xw.draw, &dc.col[defaultcs],
-						borderpx + curx * xw.cw,
-						borderpx + (term.c.y + 1) * xw.ch - cursorthickness,
-						xw.cw, cursorthickness);
-				break;
-			case 5: /* Blinking bar */
-			case 6: /* Steady bar */
-				XftDrawRect(xw.draw, &dc.col[defaultcs],
-						borderpx + curx * xw.cw,
-						borderpx + term.c.y * xw.ch,
-						cursorthickness, xw.ch);
-				break;
+		case 7: /* st extension: snowman */
+			utf8decode("☃", &g.u, UTF_SIZ);
+		case 0: /* Blinking Block */
+		case 1: /* Blinking Block (Default) */
+		case 2: /* Steady Block */
+			g.mode |= term.line[term.c.y][curx].mode & ATTR_WIDE;
+			xdrawglyph(g, term.c.x, term.c.y);
+			break;
+		case 3: /* Blinking Underline */
+		case 4: /* Steady Underline */
+			XftDrawRect(xw.draw, &drawcol,
+					borderpx + curx * xw.cw,
+					borderpx + (term.c.y + 1) * xw.ch - \
+						cursorthickness,
+					xw.cw, cursorthickness);
+			break;
+		case 5: /* Blinking bar */
+		case 6: /* Steady bar */
+			XftDrawRect(xw.draw, &drawcol,
+					borderpx + curx * xw.cw,
+					borderpx + term.c.y * xw.ch,
+					cursorthickness, xw.ch);
+			break;
 		}
 	} else {
-		XftDrawRect(xw.draw, &dc.col[defaultcs],
+		XftDrawRect(xw.draw, &drawcol,
 				borderpx + curx * xw.cw,
 				borderpx + term.c.y * xw.ch,
 				xw.cw - 1, 1);
-		XftDrawRect(xw.draw, &dc.col[defaultcs],
+		XftDrawRect(xw.draw, &drawcol,
 				borderpx + curx * xw.cw,
 				borderpx + term.c.y * xw.ch,
 				1, xw.ch - 1);
-		XftDrawRect(xw.draw, &dc.col[defaultcs],
+		XftDrawRect(xw.draw, &drawcol,
 				borderpx + (curx + 1) * xw.cw - 1,
 				borderpx + term.c.y * xw.ch,
 				1, xw.ch - 1);
-		XftDrawRect(xw.draw, &dc.col[defaultcs],
+		XftDrawRect(xw.draw, &drawcol,
 				borderpx + curx * xw.cw,
 				borderpx + (term.c.y + 1) * xw.ch - 1,
 				xw.cw, 1);
@@ -4026,7 +4052,7 @@ drawregion(int x1, int y1, int x2, int y2)
 {
 	int i, x, y, ox, numspecs;
 	Glyph base, new;
-	XftGlyphFontSpec* specs;
+	XftGlyphFontSpec *specs;
 	int ena_sel = sel.ob.x != -1 && sel.alt == IS_SET(MODE_ALTSCREEN);
 
 	if (!(xw.state & WIN_VISIBLE))

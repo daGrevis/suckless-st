@@ -142,16 +142,15 @@ static unsigned int defaultunderline = 7;
 /* Beware that overloading Button1 will disable the selection. */
 static Mousekey mkeys[] = {
 	/* button               mask            string */
-	{ Button4,              XK_NO_MOD,     "\031" },
-	{ Button5,              XK_NO_MOD,     "\005" },
+	{ Button4,              XK_NO_MOD,      "\031" },
+	{ Button5,              XK_NO_MOD,      "\005" },
 };
 
 static MouseShortcut mshortcuts[] = {
 	/* button               mask            function        argument */
-	{ Button4,              ShiftMask,      kscrollup,      { .i = 5 } },
-	{ Button5,              ShiftMask,      kscrolldown,    { .i = 5 } },
+	{ Button4,              ShiftMask,      kscrollup,      { .i = 1 } },
+	{ Button5,              ShiftMask,      kscrolldown,    { .i = 1 } },
 };
-
 
 /* Internal keyboard shortcuts. */
 #define MODKEY Mod1Mask
